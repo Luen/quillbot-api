@@ -1,13 +1,13 @@
 {
   "name": "Quillbot",
   "version": "0.0.1",
-  "description": "",
+  "description": "Get paraphrased text",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node index.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "Luen Warneke",
   "license": "ISC",
   "dependencies": {
     "puppeteer": "^1.20.0"

@@ -12,17 +12,17 @@ async function quillbot(text) {
     const buttonSelector = 'button.quillArticleBtn';
     const outputSelector = 'div#outputText';
     let str = text.trim();
-    let parts = [];
+    const parts = [];
     let output = '';
 
     // 125 words per paraphrase for a free account
     if (str.match(/(\w+)/g).length > 125) {
       while (str.match(/(\w+)/g).length > 125) {
-        const part = truncate(str, 125);
+        const part = truncate(str, 125).trim();
         str = str.slice(part.length);
         parts.push(part);
       }
-      parts.push(str);
+      parts.push(str.trim());
     } else {
       parts.push(str);
     }
@@ -30,17 +30,22 @@ async function quillbot(text) {
     const browser = await puppeteer.launch({ headless: false });
 
     const page = await browser.newPage();
-    await page.goto('https://quillbot.com/');
+    await page.goto('https://quillbot.com/', { waitUntil: 'networkidle0' });
 
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
+    console.log(parts);
+    console.log(parts.length);
+
+    for (let i = 1; i < parts.length; i += 1) {
+      console.log('Typing part', i, 'of', parts.length);
+
+      const part = parts[i - 1];
 
       // Wait for input
       const input = await page.waitForSelector(inputSelector);
 
       await page.evaluate((selector) => { document.querySelector(selector).textContent = ''; }, inputSelector);
       // Input the string in the text area
-      await input.type(' ');
+      // await input.type(' ');
       // await page.waitFor(1000);
       /* await page.evaluate((selector, text) => {
         document.querySelector(selector).textContent = text;
@@ -56,15 +61,15 @@ async function quillbot(text) {
       const paraphrased = await page.evaluate((selector) => document.querySelector(selector).textContent, outputSelector);
 
       output += paraphrased;
-
     }
-    // Display result
-    console.log(output);
+
+    console.log('Paraphasing done:');
+    console.log(output); // Display result
 
     browser.close();
   } catch (error) {
     console.log(`Error: ${error}`);
-    process.exit();
+    // process.exit();
   }
 }
 
