@@ -1,9 +1,11 @@
 const puppeteer = require('puppeteer');
 
 function truncate(str, n) {
-  if (str.length <= n) { return str; }
+  if (str.length <= n) {
+    return str;
+  }
   const subString = str.match(/\b[\w']+(?:[^\w\n]+[\w']+){0,125}\b/g); // split up text into n words
-  return subString[0].slice(0, subString[0].lastIndexOf('.') + 1); // find nearest end of stentence
+  return subString[0].slice(0, subString[0].lastIndexOf('.') + 1); // find nearest end of sentence
 }
 
 async function quillbot(text) {
@@ -43,7 +45,9 @@ async function quillbot(text) {
       // Wait for input
       const input = await page.waitForSelector(inputSelector);
 
-      await page.evaluate((selector) => { document.querySelector(selector).textContent = ''; }, inputSelector);
+      await page.evaluate((selector) => {
+        document.querySelector(selector).textContent = '';
+      }, inputSelector);
       // Input the string in the text area
       // await input.type(' ');
       // await page.waitFor(1000);
@@ -55,15 +59,18 @@ async function quillbot(text) {
       // Generate the result
       await page.click(buttonSelector);
 
-      // wait for paraphising to complete - button to become enabled
+      // wait for paraphrasing to complete - button to become enabled
       await page.waitForSelector(`${buttonSelector}:not([disabled])`);
 
-      const paraphrased = await page.evaluate((selector) => document.querySelector(selector).textContent, outputSelector);
+      const paraphrased = await page.evaluate(
+        (selector) => document.querySelector(selector).textContent,
+        outputSelector,
+      );
 
       output += paraphrased;
     }
 
-    console.log('Paraphasing done:');
+    console.log('Paraphrasing done:');
     console.log(output); // Display result
 
     browser.close();
@@ -73,4 +80,6 @@ async function quillbot(text) {
   }
 }
 
-quillbot('TCP is a connection-oriented protocol, which means that the end-to-end communications is set up using handshaking. Once the connection is set up, user data may be sent bi-directionally over the connection. Compared to TCP, UDP is a simpler message based connectionless protocol, which means that the end-to-end connection is not dedicated and information is transmitted in one direction from the source to its destination without verifying the readiness or state of the receiver. TCP controls message acknowledgment, retransmission and timeout. TCP makes multiple attempts to deliver messages that get lost along the way, In TCP therefore, there is no missing data, and if ever there are multiple timeouts, the connection is dropped. When a UDP message is sent there is no guarantee that the message it will reach its destination; it could get lost along the way.');
+// quillbot('TCP is a connection-oriented protocol, which means that the end-to-end communications is set up using handshaking. Once the connection is set up, user data may be sent bi-directionally over the connection. Compared to TCP, UDP is a simpler message based connectionless protocol, which means that the end-to-end connection is not dedicated and information is transmitted in one direction from the source to its destination without verifying the readiness or state of the receiver. TCP controls message acknowledgment, retransmission and timeout. TCP makes multiple attempts to deliver messages that get lost along the way, In TCP therefore, there is no missing data, and if ever there are multiple timeouts, the connection is dropped. When a UDP message is sent there is no guarantee that the message it will reach its destination; it could get lost along the way.');
+
+exports.quillbot = quillbot;
