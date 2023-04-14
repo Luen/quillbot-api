@@ -10,9 +10,9 @@ function truncate(str, n) {
 
 async function quillbot(text) {
   try {
-    const inputSelector = 'div#inputText';
+    const inputSelector = 'div#paraphraser-input-box';
     const buttonSelector = 'button.quillArticleBtn';
-    const outputSelector = 'div#outputText';
+    const outputSelector = 'div#paraphraser-output-box';
     let str = text.trim();
     const parts = [];
     let output = '';
@@ -34,16 +34,18 @@ async function quillbot(text) {
     const page = await browser.newPage();
     await page.goto('https://quillbot.com/', { waitUntil: 'networkidle0' });
 
-    console.log(parts);
-    console.log(parts.length);
+    // console.log(parts);
+    // console.log(parts.length);
 
     for (let i = 1; i < parts.length; i += 1) {
-      console.log('Typing part', i, 'of', parts.length);
+      console.log('Paraphrasing part', i, 'of', parts.length);
 
       const part = parts[i - 1];
 
       // Wait for input
       const input = await page.waitForSelector(inputSelector);
+      console.log('Input found');
+      await input.click();
 
       await page.evaluate((selector) => {
         document.querySelector(selector).textContent = '';
@@ -60,7 +62,10 @@ async function quillbot(text) {
       await page.click(buttonSelector);
 
       // wait for paraphrasing to complete - button to become enabled
-      await page.waitForSelector(`${buttonSelector}:not([disabled])`);
+      // await page.waitForSelector(`${buttonSelector}:not([disabled])`);
+      // await second div in buttonSelector to be removed from dom
+      await page.waitForSelector(`${buttonSelector} div:nth-child(2)`, { hidden: true });
+      console.log('Paraphrasing complete');
 
       const paraphrased = await page.evaluate(
         (selector) => document.querySelector(selector).textContent,
@@ -70,8 +75,10 @@ async function quillbot(text) {
       output += paraphrased;
     }
 
-    console.log('Paraphrasing done:');
+    console.log('Paraphrased:');
     console.log(output); // Display result
+
+    await new Promise((resolve) => setTimeout(resolve, 20000));
 
     browser.close();
   } catch (error) {
@@ -80,6 +87,6 @@ async function quillbot(text) {
   }
 }
 
-// quillbot('TCP is a connection-oriented protocol, which means that the end-to-end communications is set up using handshaking. Once the connection is set up, user data may be sent bi-directionally over the connection. Compared to TCP, UDP is a simpler message based connectionless protocol, which means that the end-to-end connection is not dedicated and information is transmitted in one direction from the source to its destination without verifying the readiness or state of the receiver. TCP controls message acknowledgment, retransmission and timeout. TCP makes multiple attempts to deliver messages that get lost along the way, In TCP therefore, there is no missing data, and if ever there are multiple timeouts, the connection is dropped. When a UDP message is sent there is no guarantee that the message it will reach its destination; it could get lost along the way.');
+quillbot('TCP is a connection-oriented protocol, which means that the end-to-end communications is set up using handshaking. Once the connection is set up, user data may be sent bi-directionally over the connection. Compared to TCP, UDP is a simpler message based connectionless protocol, which means that the end-to-end connection is not dedicated and information is transmitted in one direction from the source to its destination without verifying the readiness or state of the receiver. TCP controls message acknowledgment, retransmission and timeout. TCP makes multiple attempts to deliver messages that get lost along the way, In TCP therefore, there is no missing data, and if ever there are multiple timeouts, the connection is dropped. When a UDP message is sent there is no guarantee that the message it will reach its destination; it could get lost along the way.');
 
 exports.quillbot = quillbot;
