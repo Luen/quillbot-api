@@ -11,8 +11,8 @@ function truncate(str, n) {
 
 async function quillbot(text) {
   try {
-    //const inputSelector = 'div#inputText';
-    //const inputSelector = 'div#paraphraser-input-box';
+    // const inputSelector = 'div#inputText';
+    // const inputSelector = 'div#paraphraser-input-box';
     const placeholderText = 'To rewrite text, enter or paste it here and press Paraphrase.';
     const inputSelector = `div[placeholder="${placeholderText}"]`;
     const buttonSelector = 'button.quillArticleBtn';
@@ -34,7 +34,7 @@ async function quillbot(text) {
       parts.push(str);
     }
 
-    const browser = await puppeteer.launch({ headless: false });
+    const browser = await puppeteer.launch({ headless: true });
 
     const page = await browser.newPage();
     await page.goto('https://quillbot.com/', { waitUntil: 'networkidle0' });
@@ -48,33 +48,38 @@ async function quillbot(text) {
 
       const part = parts[i];
 
-      //await page.evaluate((selector) => {
+      // await page.evaluate((selector) => {
       //  document.querySelector(selector).textContent = '';
-      //}, inputSelector);
+      // }, inputSelector);
 
       // Input the string in the text area
       /* await page.evaluate((selector, text) => {
         document.querySelector(selector).textContent = text;
       }, inputSelector, part); */
       // await input.type(part);
-      //await page.focus(inputSelector);
+      // await page.focus(inputSelector);
+      // eslint-disable-next-line no-promise-executor-return
       await new Promise((resolve) => setTimeout(resolve, 100));
       await input.click();
       await input.type(' ');
+      // eslint-disable-next-line no-promise-executor-return
       await new Promise((resolve) => setTimeout(resolve, 100));
+
       await page.keyboard.down('Control');
       await page.keyboard.press('KeyA');
       await page.keyboard.up('Control');
       await page.keyboard.up('Delete');
       // Set clipboard content
-      await page.evaluate(async (text) => {
-        await navigator.clipboard.writeText(text);
+      // eslint-disable-next-line no-loop-func
+      await page.evaluate(async (textString) => {
+        // eslint-disable-next-line no-undef
+        await navigator.clipboard.writeText(textString);
       }, part);
-      //await clipboardy.write(part);
+      // await clipboardy.write(part);
       await page.keyboard.down('Control');
       await page.keyboard.press('KeyV');
       await page.keyboard.up('Control');
-      //await input.type(' ');
+      // await input.type(' ');
 
       // Generate the result
       await page.click(buttonSelector);
@@ -96,14 +101,14 @@ async function quillbot(text) {
     console.log('Paraphrased:');
     console.log(output); // Display result
 
-    //await new Promise((resolve) => setTimeout(resolve, 20000));
+    // await new Promise((resolve) => setTimeout(resolve, 20000));
 
     browser.close();
 
     return output;
-
   } catch (error) {
     console.log(`Error: ${error}`);
+    return null;
   }
 }
 
