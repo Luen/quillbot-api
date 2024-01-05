@@ -13,7 +13,7 @@ npm install
 
 # run example
 
-node test
+node example
 
 
 # example code
