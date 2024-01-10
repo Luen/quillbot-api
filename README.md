@@ -1,9 +1,9 @@
 # Quillbot
 
-Quillbot is an AI article rewriter/spinner. This script uses Chrome Headless Browser via Puppeteer to interact with [Quillbot](https://quillbot.com/) to rephrase (plagiarise) text.
+ [Quillbot](https://quillbot.com/) is an AI article rewriter/spinner. This script uses Chrome Headless Browser via Puppeteer to interact with Quillbot to rephrase (plagiarise) text.
 Quillbot no longer has an API, so this is the slow scraping method using Puppeteer.
 
-Note that this is a learning project for myself and I'm a hobbyist programmer.
+Note that this is a learning project for myself, and I'm a hobbyist programmer.
 
 # Features
 ## Supported Features:
@@ -46,10 +46,10 @@ const { quillbot } = require('./index');
 ```
 
 # Note
-This script is primarily for educational and experimental purposes. Please be aware of the ethical implications and the terms of service of Quillbot when using this script for paraphrasing content.
+This script is primarily for educational and experimental purposes. Please keep in mind the ethical implications and Quillbot's terms of service when using this script for paraphrasing content.
 
 # Contributing
-Contributions to improve this script are welcome. Please fork the repository and submit a pull request with your changes.
+I want you to know that contributions to improve this script are welcome. Please fork the repository and submit a pull request with your changes.
 
 # License
 This project is licensed under the MIT License - see the LICENSE file for details.
