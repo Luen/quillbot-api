@@ -6,9 +6,20 @@
   "scripts": {
     "start": "node index.js"
   },
-  "keywords": [],
+  "keywords": [
+    "quillbot",
+    "api",
+    "paraphrase",
+    "paraphraser",
+    "paraphrasing",
+    "text"
+  ],
   "author": "Luen Warneke",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Luen/quillbot-api.git"
+  },
   "dependencies": {
     "puppeteer": "^21.11.0"
   },
