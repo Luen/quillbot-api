@@ -1,6 +1,6 @@
 {
   "name": "Quillbot",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Get paraphrased text",
   "main": "index.js",
   "scripts": {
