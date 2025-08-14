@@ -22,7 +22,7 @@
     "url": "https://github.com/Luen/quillbot-api.git"
   },
   "dependencies": {
-    "puppeteer": "^24.5.0"
+    "puppeteer": "^24.15.0"
   },
   "devDependencies": {
     "eslint": "^8.22.0",
