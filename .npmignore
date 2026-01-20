@@ -1,0 +1,27 @@
+# Development files
+.cursor/
+.eslintrc
+.vscode/
+.github/
+.gitattributes
+
+# Debug files
+debug-html/
+*.log
+
+# Git files
+.git/
+.gitignore
+
+# Node modules (shouldn't be included anyway)
+node_modules/
+
+# IDE files
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

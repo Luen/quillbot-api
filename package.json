@@ -25,7 +25,7 @@
   "homepage": "https://github.com/Luen/quillbot-api#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Luen/quillbot-api.git"
+    "url": "git+https://github.com/Luen/quillbot-api.git"
   },
   "dependencies": {
     "puppeteer": "^24.35.0"
