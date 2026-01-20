@@ -19,7 +19,7 @@ Note that this is a learning project, and I'm a hobbyist programmer.
 - **Headless Browser Automation**: Automated text input and extraction using Puppeteer with a Chrome Headless Browser.
 - **Automatic Translation**: Translation can be triggered automatically via URL parameters, with fallback to button click if needed.
 
-### Not Supported
+### Not Supported (yet)
 
 - User Login: The script does not support user authentication or logging into a QuillBot account.
 - Premium Features: Access to premium features of QuillBot is not available. The script only uses the free services offered by QuillBot.
@@ -29,11 +29,19 @@ Note that this is a learning project, and I'm a hobbyist programmer.
 
 ## Installation
 
+Install via npm:
+
 ```bash
-git clone https://github.com/Luen/quillbot-api
-cd quillbot-api
-npm install
+npm install quillbot-api
 ```
+
+Or via yarn:
+
+```bash
+yarn add quillbot-api
+```
+
+This will install Puppeteer and any other dependencies.
 
 ## Usage
 
