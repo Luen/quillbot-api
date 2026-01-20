@@ -1,0 +1,26 @@
+---
+description: Mandatory linting requirements and workflow
+globs: "**/*.js", "lib/**/*.js"
+---
+
+# Linting Requirements
+
+## Always Run Lint
+- **MANDATORY**: Always run `npm run lint` after making code changes
+- Fix all linting errors before committing
+- Use `npm run lint:fix` to automatically fix fixable issues
+- Never commit code with linting errors
+- If you introduce new code, ensure it passes linting checks
+
+## Linting Workflow
+1. Make code changes
+2. Run `npm run lint` to check for errors
+3. If errors exist, run `npm run lint:fix` to auto-fix
+4. Manually fix any remaining errors
+5. Verify all linting passes before proceeding
+
+## Pre-Commit Checklist
+- [ ] Code changes complete
+- [ ] Linting passes (`npm run lint`)
+- [ ] No linting errors or warnings
+- [ ] Code tested and working

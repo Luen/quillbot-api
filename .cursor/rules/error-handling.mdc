@@ -1,0 +1,20 @@
+---
+description: Error handling best practices
+globs: "**/*.js", "lib/**/*.js"
+---
+
+# Error Handling
+
+- Always handle errors gracefully
+- Provide meaningful error messages
+- Use try/catch blocks for async operations
+- Don't suppress errors silently unless explicitly intentional
+- Log errors appropriately (console.error for errors, console.log for info)
+- Use the `safePageOperation` wrapper for all Puppeteer page operations
+
+## Puppeteer-Specific Error Handling
+- Use `safePageOperation` wrapper for all page operations
+- Handle frame detachment errors gracefully
+- Filter out harmless browser console errors
+- Use appropriate wait times and timeouts
+- Save HTML for debugging only in dev mode

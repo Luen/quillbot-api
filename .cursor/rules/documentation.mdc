@@ -1,0 +1,21 @@
+---
+description: Documentation requirements and standards
+globs: "**/*.js", "README.md"
+---
+
+# Documentation
+
+- Add JSDoc comments for all exported functions
+- Document function parameters and return values
+- Include usage examples in comments when helpful
+- Keep README.md updated with significant changes
+- Document any breaking changes or new features
+
+## JSDoc Format
+```javascript
+/**
+ * Brief description of the function
+ * @param {Type} paramName - Description of parameter
+ * @returns {Type} Description of return value
+ */
+```

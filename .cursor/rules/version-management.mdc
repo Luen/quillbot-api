@@ -1,0 +1,33 @@
+---
+description: Mandatory version management and GitHub Actions release workflow
+globs: "package.json"
+---
+
+# Version Management
+
+## Package.json Version Updates
+- **MANDATORY**: Always update the `version` field in `package.json` after making changes
+- Follow semantic versioning (semver):
+  - **PATCH** (x.x.X): Bug fixes, minor improvements, non-breaking changes
+  - **MINOR** (x.X.x): New features, backward-compatible changes
+  - **MAJOR** (X.x.x): Breaking changes, major API changes
+- The GitHub Actions workflow will automatically create a release when version changes
+
+## Version Update Workflow
+1. Make code changes
+2. Determine version bump type (patch/minor/major)
+3. Update `package.json` version field accordingly
+4. Run linting and fix any issues
+5. Commit changes (version bump should be in the same commit as code changes)
+6. Push to trigger GitHub Actions release
+
+## Example Version Updates
+- Bug fix or small improvement: `1.0.0` → `1.0.1` (patch)
+- New feature: `1.0.1` → `1.1.0` (minor)
+- Breaking change: `1.1.0` → `2.0.0` (major)
+
+## Important Notes
+- Version updates are REQUIRED after any code changes
+- The GitHub Actions workflow (`/.github/workflows/release.yml`) monitors `package.json` changes
+- A new release will be automatically created when version changes
+- Version bump should be included in the same commit as the code changes

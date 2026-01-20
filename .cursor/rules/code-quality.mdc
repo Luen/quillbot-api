@@ -1,0 +1,41 @@
+---
+description: Code quality standards and DRY principles for the quillbot-api project
+globs: "**/*.js", "lib/**/*.js"
+---
+
+# Code Quality & Standards
+
+## General Principles
+- Write clean, maintainable, and high-quality code
+- Follow DRY (Don't Repeat Yourself) principles - extract common functionality into reusable functions
+- Use meaningful variable and function names that clearly express intent
+- Add JSDoc comments for all functions, especially exported ones
+- Keep functions focused on a single responsibility
+- Prefer composition over duplication
+
+## Code Style
+- Follow the existing code style and ESLint configuration (Airbnb base)
+- Use 4 spaces for indentation (as configured in .eslintrc)
+- Maximum line length: 120 characters
+- Use async/await for asynchronous operations
+- Handle errors appropriately with try/catch blocks
+- Use descriptive error messages
+
+## DRY Principles
+- Extract repeated code patterns into utility functions
+- Create shared helper functions in `lib/utils.js` when functionality is used in multiple places
+- Avoid copy-pasting code - refactor instead
+- Use constants for magic numbers and repeated strings
+- Consolidate similar functions when possible
+
+## File Organization
+- Keep related functionality together
+- Place shared utilities in `lib/utils.js`
+- Keep functions modular and focused
+- Export only what's necessary from each module
+
+## Naming Conventions
+- Use camelCase for variables and functions
+- Use descriptive names that indicate purpose
+- Prefix private/internal functions with `_` if needed (but prefer module exports)
+- Use constants for configuration values

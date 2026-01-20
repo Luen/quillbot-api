@@ -1,0 +1,28 @@
+---
+description: Git workflow and commit guidelines
+globs: "**/*"
+---
+
+# Git Workflow
+
+## Commit Messages
+- Write clear, descriptive commit messages
+- Include version bump in commit message when applicable
+- Follow conventional commit format when possible
+- Example: "Fix language selection error and update version to 1.0.1"
+
+## Pre-Commit Checklist
+- [ ] Code changes complete
+- [ ] Linting passes (`npm run lint`)
+- [ ] Version updated in `package.json` (if code changed)
+- [ ] Code tested and working
+- [ ] No console errors or warnings (unless intentional)
+- [ ] Changes verified with `node example.js` if applicable
+
+## Commit Workflow
+1. Make code changes
+2. Update version in `package.json` (if code changed)
+3. Run `npm run lint` and fix any issues
+4. Test functionality
+5. Commit with descriptive message including version bump
+6. Push to trigger GitHub Actions release

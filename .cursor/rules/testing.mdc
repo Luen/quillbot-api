@@ -1,0 +1,18 @@
+---
+description: Testing and verification guidelines
+globs: "**/*.js", "example.js"
+---
+
+# Testing & Verification
+
+- After making changes, verify functionality works as expected
+- Test with `node example.js` when applicable
+- Ensure no regressions are introduced
+- Check that error cases are handled properly
+- Verify that both paraphrasing and translation examples work correctly
+
+## Verification Steps
+1. Run `node example.js` to test both paraphrasing and translation
+2. Check console output for any unexpected errors
+3. Verify output quality matches expectations
+4. Ensure no browser console errors (except known harmless ones)
