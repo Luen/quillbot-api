@@ -24,6 +24,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
       
       - name: Get current version
         id: current-version
@@ -74,3 +75,12 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Note: NPM_TOKEN secret may expire after 90 days. See .github/NPM_PUBLISH_SETUP.md for renewal instructions.
+      # This step will continue even if npm publish fails (token missing/expired) - release will still be created
+      - name: Publish to npm
+        if: steps.version-check.outputs.changed == 'true'
+        run: npm publish || echo "⚠️  npm publish failed (token may be missing/expired) - GitHub release was still created successfully"
+        continue-on-error: true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
