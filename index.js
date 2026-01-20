@@ -186,6 +186,12 @@ async function clearInputField(page, inputSelector, inputField) {
             await page.click(inputSelector, { clickCount: 1 })
             await new Promise(resolve => setTimeout(resolve, 200))
             
+            // Press Ctrl+End to go to the very end of the text
+            await page.keyboard.down('Control')
+            await page.keyboard.press('End')
+            await page.keyboard.up('Control')
+            await new Promise(resolve => setTimeout(resolve, 200))
+            
             // Press space bar to dismiss any overlays
             await page.keyboard.press('Space')
             await new Promise(resolve => setTimeout(resolve, 200))
@@ -245,67 +251,86 @@ async function getInputContent(page, inputSelector) {
 // Function to input text into the specified field
 async function inputString(page, inputSelector, inputField, text) {
     try {
-        // First, click on the text area and press space bar to dismiss overlays and activate input
-        // This is the key step that makes everything work properly
+        // Step 1: Update the text box content first (using JavaScript)
+        console.log('Setting text content in input field...')
+        await safePageOperation(async () => {
+            await page.evaluate(
+                (selector, textString) => {
+                    const inputElement = document.querySelector(selector)
+                    if (inputElement) {
+                        inputElement.textContent = textString
+                        if (inputElement.value !== undefined) {
+                            inputElement.value = textString
+                        }
+                        // Trigger input events to notify the page
+                        const events = ['input', 'change', 'keyup']
+                        events.forEach(eventType => {
+                            const event = new Event(eventType, { bubbles: true })
+                            inputElement.dispatchEvent(event)
+                        })
+                    }
+                },
+                inputSelector,
+                text
+            )
+        })
+
+        // Wait a moment for content to be set
+        await new Promise(resolve => setTimeout(resolve, 300))
+
+        // Step 2: Click on the text area and press space bar to activate it
+        // This dismisses overlays and makes the paraphrase button clickable
         await safePageOperation(async () => {
             // Click on the input field
             await page.click(inputSelector, { clickCount: 1 })
             await new Promise(resolve => setTimeout(resolve, 300))
             
+            // Press Ctrl+End to go to the very end of the text
+            await page.keyboard.down('Control')
+            await page.keyboard.press('End')
+            await page.keyboard.up('Control')
+            await new Promise(resolve => setTimeout(resolve, 200))
+            
             // Press space bar to dismiss any overlays and activate the input
             await page.keyboard.press('Space')
             await new Promise(resolve => setTimeout(resolve, 300))
-            
-            // Clear any existing content (in case space bar added a space)
-            await page.focus(inputSelector)
-            await page.keyboard.down('Control')
-            await page.keyboard.press('KeyA')
-            await page.keyboard.up('Control')
-            await page.keyboard.press('Backspace')
-            await new Promise(resolve => setTimeout(resolve, 200))
         })
 
-        // Now type the text character by character
-        console.log('Typing text into input field...')
-        await safePageOperation(async () => {
-            await page.focus(inputSelector)
-            // Type the text with a small delay between characters
-            await page.type(inputSelector, text, { delay: 20 })
-        })
-
-        // Wait for text to be fully entered
-        await new Promise(resolve => setTimeout(resolve, 500))
-
-        // Verify the text was entered
+        // Verify the text was set correctly
         let inputContent = await getInputContent(page, inputSelector)
-        if (inputContent && inputContent.trim().length > text.trim().length * 0.8) {
-            console.log(`Text entered successfully (${inputContent.trim().length} characters)`)
+        if (inputContent && inputContent.trim().length >= text.trim().length * 0.9) {
+            console.log(`Text content set successfully (${inputContent.trim().length} characters)`)
         } else {
-            console.warn('Warning: Text may not have been entered correctly, trying fallback method...')
-            // Fallback: Try JavaScript method if typing didn't work well enough
-            await safePageOperation(async () => {
-                await page.evaluate(
-                    (selector, textString) => {
-                        const inputElement = document.querySelector(selector)
-                        if (inputElement) {
-                            inputElement.focus()
-                            inputElement.textContent = textString
-                            if (inputElement.value !== undefined) {
-                                inputElement.value = textString
-                            }
-                            // Trigger events
-                            const events = ['input', 'change', 'keyup']
-                            events.forEach(eventType => {
-                                const event = new Event(eventType, { bubbles: true })
-                                inputElement.dispatchEvent(event)
-                            })
+            console.warn('Warning: Text content may not have been set correctly, trying paste method...')
+            // Fallback: Try clipboard paste if JavaScript method didn't work
+            try {
+                await safePageOperation(async () => {
+                    await page.evaluate(async (textString) => {
+                        // eslint-disable-next-line no-undef
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            await navigator.clipboard.writeText(textString)
                         }
-                    },
-                    inputSelector,
-                    text
-                )
-            })
-            await new Promise(resolve => setTimeout(resolve, 500))
+                    }, text)
+                    await page.focus(inputSelector)
+                    await page.keyboard.down('Control')
+                    await page.keyboard.press('KeyV')
+                    await page.keyboard.up('Control')
+                })
+                await new Promise(resolve => setTimeout(resolve, 500))
+                // Click and press space again after pasting
+                await page.click(inputSelector, { clickCount: 1 })
+                await new Promise(resolve => setTimeout(resolve, 200))
+                // Press Ctrl+End to go to the very end of the text
+                await page.keyboard.down('Control')
+                await page.keyboard.press('End')
+                await page.keyboard.up('Control')
+                await new Promise(resolve => setTimeout(resolve, 200))
+                // Press space bar to dismiss any overlays
+                await page.keyboard.press('Space')
+                await new Promise(resolve => setTimeout(resolve, 200))
+            } catch (error) {
+                console.log(`Paste fallback failed: ${error.message}`)
+            }
         }
     } catch (error) {
         console.error(`Error inputting string: ${error.message}`)
@@ -533,36 +558,40 @@ async function selectLanguage(page, languageName) {
     }
 }
 async function selectMode(page, modeName) {
-    const modeDropdownSelector = '#demo-simple-select'
+    // Map mode names to their data-testid values
+    const modeTestIds = {
+        'Standard': 'pphr/header/modes/standard',
+        'Fluency': 'pphr/header/modes/fluency',
+        'Humanize': 'pphr/header/modes/natural',
+        'Natural': 'pphr/header/modes/natural',
+        'Formal': 'pphr/header/modes/formal',
+        'Academic': 'pphr/header/modes/academic',
+        'Simple': 'pphr/header/modes/simple',
+        'Creative': 'pphr/header/modes/creative',
+        'Expand': 'pphr/header/modes/expand',
+        'Shorten': 'pphr/header/modes/shorten',
+        'Custom': 'pphr/header/modes/custom',
+    }
+
+    // Normalize mode name (capitalize first letter)
+    const normalizedModeName = modeName.charAt(0).toUpperCase() + modeName.slice(1)
+    const testId = modeTestIds[normalizedModeName] || modeTestIds[modeName]
+
+    if (!testId) {
+        console.log(`Mode "${modeName}" not recognized. Available modes: ${Object.keys(modeTestIds).join(', ')}`)
+        return
+    }
 
     try {
         await safePageOperation(async () => {
-            // Check if page methods are available
-            if (typeof page.waitForSelector !== 'function') {
-                throw new Error('Page methods not available - page may be in invalid state')
-            }
-            await page.waitForSelector(modeDropdownSelector, { visible: true, timeout: 10000 })
-            await page.click(modeDropdownSelector)
+            // Wait for the mode button with the specific data-testid
+            const selector = `[data-testid="${testId}"]`
+            await page.waitForSelector(selector, { visible: true, timeout: 10000 })
+            await page.click(selector)
         })
 
-        // Additional wait to ensure dropdown animation completes and options are fully rendered
-        await new Promise(resolve => setTimeout(resolve, 1000))
-
-        // Since direct XPath approach failed, let's try clicking based on the text content more explicitly
-        // Adjusting the approach to use evaluation for more control
-        await safePageOperation(async () => {
-            await page.evaluate((modeName) => {
-                const options = Array.from(
-                    document.querySelectorAll('li[role="option"]')
-                )
-                const targetOption = options.find((option) =>
-                    option.textContent.includes(modeName)
-                )
-                if (targetOption) {
-                    targetOption.click()
-                }
-            }, modeName)
-        })
+        // Wait for mode selection to complete
+        await new Promise(resolve => setTimeout(resolve, 500))
 
         console.log(`Mode set to "${modeName}".`)
     } catch (error) {
@@ -919,19 +948,17 @@ async function quillbot(text, options = {}) {
             // Check if we're in dev mode (headless: false or 'new')
             const isDev = options.headless === false || options.headless === 'new'
             
-            if (isDev) {
-                // In dev mode, keep browser open longer for debugging
-                console.log('\n=== DEV MODE: Browser will stay open for 60 seconds ===')
+            // Only delay browser close in dev mode if there was an error (not on success)
+            if (isDev && !options._success) {
+                // In dev mode with errors, keep browser open for debugging
+                console.log('\n=== DEV MODE: Browser will stay open for 30 seconds for debugging ===')
                 console.log('You can inspect the page to debug selectors and page structure.')
                 console.log('Close the browser manually or wait for it to close automatically.\n')
-                await new Promise(resolve => setTimeout(resolve, 60000))
+                await new Promise(resolve => setTimeout(resolve, 30000))
             }
             
             try {
                 await browser.close()
-                if (isDev) {
-                    console.log('Browser closed.')
-                }
             } catch (error) {
                 console.error(`Error closing browser: ${error.message}`)
             }
