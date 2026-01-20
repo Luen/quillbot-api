@@ -1,10 +1,12 @@
 {
   "name": "quillbot-api",
-  "version": "0.2.0",
-  "description": "Get paraphrased text",
+  "version": "1.0.0",
+  "description": "Unofficial QuillBot API for paraphrasing and translation",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "lint": "eslint lib/ *.js",
+    "lint:fix": "eslint lib/ *.js --fix"
   },
   "keywords": [
     "quillbot",
@@ -12,7 +14,11 @@
     "paraphrase",
     "paraphraser",
     "paraphrasing",
-    "text"
+    "translate",
+    "translator",
+    "translation",
+    "text",
+    "quillbot-api"
   ],
   "author": "Luen Warneke",
   "license": "MIT",
