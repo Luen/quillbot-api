@@ -3,5 +3,6 @@
         "clipboardy",
         "networkidle",
         "quillbot"
-    ]
+    ],
+    "snyk.advanced.autoSelectOrganization": true
 }

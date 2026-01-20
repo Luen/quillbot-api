@@ -1,4 +1,6 @@
 const puppeteer = require('puppeteer')
+const fs = require('fs')
+const path = require('path')
 
 function truncate(str, n) {
     if (str.length <= n) {
@@ -9,20 +11,143 @@ function truncate(str, n) {
     return subString[0].slice(0, subString[0].lastIndexOf('.') + 1) // find nearest end of sentence
 }
 
+// Function to save HTML for debugging
+async function saveHTMLForDebug(page, filename, isDev) {
+    if (!isDev || !page) return // Only save in dev mode and if page exists
+    
+    try {
+        const html = await safePageOperation(async () => {
+            try {
+                return await page.content()
+            } catch (error) {
+                // If page is closed or frame detached, return null
+                if (error.message.includes('Target closed') || 
+                    error.message.includes('detached') ||
+                    error.message.includes('Session closed')) {
+                    return null
+                }
+                throw error
+            }
+        }, 1) // Only one retry for saving HTML - not critical
+        
+        if (!html) {
+            // Page was closed or detached, can't save
+            return
+        }
+        
+        const debugDir = path.join(process.cwd(), 'debug-html')
+        if (!fs.existsSync(debugDir)) {
+            fs.mkdirSync(debugDir, { recursive: true })
+        }
+        const filepath = path.join(debugDir, filename)
+        fs.writeFileSync(filepath, html, 'utf8')
+        console.log(`HTML saved to: ${filepath}`)
+    } catch (error) {
+        // Silently fail - HTML saving is not critical
+        // Only log if it's not a known navigation/frame error
+        if (!error.message.includes('Target closed') && 
+            !error.message.includes('detached') &&
+            !error.message.includes('Session closed')) {
+            console.log(`Note: Could not save HTML ${filename}: ${error.message}`)
+        }
+    }
+}
+
+// Helper function to safely execute page operations with retry
+async function safePageOperation(operation, retries = 3, pageRef = null) {
+    let lastError = null
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await operation()
+        } catch (error) {
+            lastError = error
+            // Check if it's a frame detachment or target closed error
+            const isDetachedError = error.message.includes('detached') || 
+                                   error.message.includes('Target closed') ||
+                                   error.message.includes('Session closed') ||
+                                   error.message.includes('Protocol error') ||
+                                   error.message.includes('Navigating frame')
+            
+            if (isDetachedError && i < retries - 1) {
+                // Wait progressively longer before retrying
+                const waitTime = 2000 * (i + 1)
+                console.log(`Frame detached, waiting ${waitTime}ms before retry ${i + 1}/${retries - 1}...`)
+                await new Promise(resolve => setTimeout(resolve, waitTime))
+                
+                // Try to ensure page is still valid (but don't loop checking mainFrame)
+                if (pageRef && typeof pageRef.url === 'function') {
+                    try {
+                        await pageRef.url() // This will throw if page is truly invalid
+                    } catch (urlError) {
+                        console.error('Page is no longer valid, cannot retry')
+                        throw new Error('Page is no longer accessible')
+                    }
+                }
+                continue
+            }
+            // If not a retryable error or out of retries, throw
+            throw error
+        }
+    }
+    // This should never be reached, but just in case
+    throw lastError || new Error('Operation failed after retries')
+}
+
 // Function to get the correct input selector
 async function getInputSelector(page) {
     const placeholderText =
         'To rewrite text, enter or paste it here and press "Paraphrase."'
+    // Try multiple possible selectors for the input field on the paraphrasing tool page
     const inputSelectors = [
         '#inputText',
         '#paraphraser-input-box',
+        '[data-testid="input-text-box"]',
+        '[data-testid="paraphraser-input-box"]',
+        'textarea[placeholder*="paste" i]',
+        'textarea[placeholder*="Paraphrase" i]',
+        'div[contenteditable="true"][placeholder*="paste" i]',
+        'div[contenteditable="true"][placeholder*="Paste" i]',
+        'div[placeholder*="paste" i]',
         `div[placeholder="${placeholderText}"]`,
+        '[aria-label*="paste" i]',
+        '[aria-label*="input" i]',
+        '.paraphraser-input-box',
+        '[role="textbox"]',
     ]
 
     for (const selector of inputSelectors) {
-        const exists = (await page.$(selector)) !== null
-        if (exists) {
-            return selector // Return the selector if found
+        try {
+            const exists = await safePageOperation(async () => {
+                // Try using page.$ directly first (simpler, less prone to frame issues)
+                const element = await page.$(selector)
+                if (!element) return false
+                
+                // Check if element is visible and interactive
+                const isVisible = await page.evaluate((sel) => {
+                    const el = document.querySelector(sel)
+                    if (!el) return false
+                    const rect = el.getBoundingClientRect()
+                    const style = window.getComputedStyle(el)
+                    return (
+                        style.display !== 'none' &&
+                        style.visibility !== 'hidden' &&
+                        el.offsetParent !== null &&
+                        rect.width > 0 &&
+                        rect.height > 0
+                    )
+                }, selector)
+                return isVisible
+            }, 2, page) // Reduced retries to avoid long waits
+            if (exists) {
+                console.log(`Found input selector: ${selector}`)
+                return selector // Return the selector if found
+            }
+        } catch (error) {
+            // Continue to next selector - don't log every failure
+            if (!error.message.includes('detached')) {
+                // Only log non-detached errors
+            }
+            continue
         }
     }
 
@@ -37,9 +162,11 @@ async function getInputField(page, inputSelector) {
     }
 
     try {
-        const input = await page.waitForSelector(inputSelector, {
-            visible: true,
-            timeout: 5000,
+        const input = await safePageOperation(async () => {
+            return await page.waitForSelector(inputSelector, {
+                visible: true,
+                timeout: 10000,
+            })
         })
         return input // Return the input field if found
     } catch (error) {
@@ -52,95 +179,173 @@ async function getInputField(page, inputSelector) {
 
 // Function to clear the input field
 async function clearInputField(page, inputSelector, inputField) {
-    await inputField.click()
-    await inputField.type(' ')
+    try {
+        // Click on the text area and press space bar first (this dismisses overlays and activates input)
+        await safePageOperation(async () => {
+            // Click on the input field
+            await page.click(inputSelector, { clickCount: 1 })
+            await new Promise(resolve => setTimeout(resolve, 200))
+            
+            // Press space bar to dismiss any overlays
+            await page.keyboard.press('Space')
+            await new Promise(resolve => setTimeout(resolve, 200))
+        })
 
-    // Clear the text area using JavaScript
-    await page.evaluate((selector) => {
-        const inputElement = document.querySelector(selector)
-        if (inputElement) {
-            inputElement.textContent = ''
-            if (inputElement.value) {
-                inputElement.value = '' // Clear value for input elements
-            }
-        }
-    }, inputSelector)
-    // console.log('Input cleared using JavaScript');
+        // Clear the text area using keyboard commands (most reliable)
+        await safePageOperation(async () => {
+            await page.evaluate((selector) => {
+                const inputElement = document.querySelector(selector)
+                if (inputElement) {
+                    inputElement.focus()
+                    inputElement.textContent = ''
+                    if (inputElement.value !== undefined) {
+                        inputElement.value = '' // Clear value for input elements
+                    }
+                    // Trigger input event
+                    const event = new Event('input', { bubbles: true })
+                    inputElement.dispatchEvent(event)
+                }
+            }, inputSelector)
+        })
 
-    // Additional step to ensure complete clearing using keyboard commands
-    await page.focus(inputSelector)
-    await page.keyboard.down('Control')
-    await page.keyboard.press('KeyA')
-    await page.keyboard.up('Control')
-    await page.keyboard.press('Backspace') // Using 'Backspace' instead of 'Delete' for broader compatibility
-    // console.log('Input cleared using keyboard commands');
+        // Additional step to ensure complete clearing using keyboard commands
+        await safePageOperation(async () => {
+            await page.focus(inputSelector)
+            await page.keyboard.down('Control')
+            await page.keyboard.press('KeyA')
+            await page.keyboard.up('Control')
+            await page.keyboard.press('Backspace') // Using 'Backspace' instead of 'Delete' for broader compatibility
+        })
+
+        // Wait a moment to ensure clearing is complete
+        await new Promise(resolve => setTimeout(resolve, 300))
+    } catch (error) {
+        console.error(`Error clearing input field: ${error.message}`)
+    }
 }
 
 // Function to get inputContent
-function getInputContent(page, inputSelector) {
-    return page.evaluate((selector) => {
-        const inputElement = document.querySelector(selector)
-        if (inputElement) {
-            return inputElement.textContent
-        }
+async function getInputContent(page, inputSelector) {
+    try {
+        return await safePageOperation(async () => {
+            return await page.evaluate((selector) => {
+                const inputElement = document.querySelector(selector)
+                if (inputElement) {
+                    return inputElement.textContent || inputElement.value || ''
+                }
+                return null
+            }, inputSelector)
+        })
+    } catch (error) {
+        console.error(`Error getting input content: ${error.message}`)
         return null
-    }, inputSelector)
+    }
 }
 
 // Function to input text into the specified field
 async function inputString(page, inputSelector, inputField, text) {
-    // Attempt to change textContent directly using JavaScript
-    await page.evaluate(
-        (selector, textString) => {
-            const inputElement = document.querySelector(selector)
-            if (inputElement) {
-                inputElement.textContent = textString
-                if (inputElement.value !== undefined) {
-                    inputElement.value = textString // For input elements
-                }
-            }
-        },
-        inputSelector,
-        text
-    )
+    try {
+        // First, click on the text area and press space bar to dismiss overlays and activate input
+        // This is the key step that makes everything work properly
+        await safePageOperation(async () => {
+            // Click on the input field
+            await page.click(inputSelector, { clickCount: 1 })
+            await new Promise(resolve => setTimeout(resolve, 300))
+            
+            // Press space bar to dismiss any overlays and activate the input
+            await page.keyboard.press('Space')
+            await new Promise(resolve => setTimeout(resolve, 300))
+            
+            // Clear any existing content (in case space bar added a space)
+            await page.focus(inputSelector)
+            await page.keyboard.down('Control')
+            await page.keyboard.press('KeyA')
+            await page.keyboard.up('Control')
+            await page.keyboard.press('Backspace')
+            await new Promise(resolve => setTimeout(resolve, 200))
+        })
 
-    // Attempt to set clipboard content and paste it
-    await page.evaluate(async (textString) => {
-        // eslint-disable-next-line no-undef
-        await navigator.clipboard.writeText(textString)
-    }, text)
-    await page.focus(inputSelector)
-    await page.keyboard.down('Control')
-    await page.keyboard.press('KeyV')
-    await page.keyboard.up('Control')
+        // Now type the text character by character
+        console.log('Typing text into input field...')
+        await safePageOperation(async () => {
+            await page.focus(inputSelector)
+            // Type the text with a small delay between characters
+            await page.type(inputSelector, text, { delay: 20 })
+        })
 
-    const inputContent = await getInputContent(page, inputSelector)
-    if (inputContent !== text) {
-        // Attempt to type it out
-        inputField.type(text)
+        // Wait for text to be fully entered
+        await new Promise(resolve => setTimeout(resolve, 500))
+
+        // Verify the text was entered
+        let inputContent = await getInputContent(page, inputSelector)
+        if (inputContent && inputContent.trim().length > text.trim().length * 0.8) {
+            console.log(`Text entered successfully (${inputContent.trim().length} characters)`)
+        } else {
+            console.warn('Warning: Text may not have been entered correctly, trying fallback method...')
+            // Fallback: Try JavaScript method if typing didn't work well enough
+            await safePageOperation(async () => {
+                await page.evaluate(
+                    (selector, textString) => {
+                        const inputElement = document.querySelector(selector)
+                        if (inputElement) {
+                            inputElement.focus()
+                            inputElement.textContent = textString
+                            if (inputElement.value !== undefined) {
+                                inputElement.value = textString
+                            }
+                            // Trigger events
+                            const events = ['input', 'change', 'keyup']
+                            events.forEach(eventType => {
+                                const event = new Event(eventType, { bubbles: true })
+                                inputElement.dispatchEvent(event)
+                            })
+                        }
+                    },
+                    inputSelector,
+                    text
+                )
+            })
+            await new Promise(resolve => setTimeout(resolve, 500))
+        }
+    } catch (error) {
+        console.error(`Error inputting string: ${error.message}`)
+        throw error
     }
 }
 
 // Function to get the correct button selector
 async function getButtonSelector(page) {
+    // Updated selectors based on actual HTML structure
     const buttonSelectors = [
-        'button.quillArticleBtn',
+        '[data-testid="pphr/input_footer/paraphrase_button"]', // Primary selector from HTML
+        'button[data-testid="pphr/input_footer/paraphrase_button"]',
+        '[aria-label="Paraphrase (Ctrl + Enter)"] button',
         '[aria-label="Rephrase (Cmd + Return)"] button',
         '[aria-label="Paraphrase (Cmd + Return)"] button',
+        'button.quillArticleBtn',
+        'button[aria-label*="Paraphrase"]',
+        'button[aria-label*="Rephrase"]',
         "//div[contains(text(), 'Paraphrase') or contains(text(), 'Rephrase')]/ancestor::button",
     ]
 
     for (const selector of buttonSelectors) {
-        let exists
-        if (selector.startsWith('//')) {
-            // XPath selector
-            exists = (await page.$x(selector).length) > 0
-        } else {
-            // CSS selector
-            exists = (await page.$(selector)) !== null
-        }
-        if (exists) {
-            return selector // Return the selector if found
+        try {
+            let exists = await safePageOperation(async () => {
+                if (selector.startsWith('//')) {
+                    // XPath selector
+                    const elements = await page.$x(selector)
+                    return elements.length > 0
+                } else {
+                    // CSS selector
+                    return (await page.$(selector)) !== null
+                }
+            })
+            if (exists) {
+                return selector // Return the selector if found
+            }
+        } catch (error) {
+            // Continue to next selector
+            continue
         }
     }
 
@@ -154,49 +359,76 @@ async function clickParaphraseButton(page, buttonSelector) {
         return false // Return false if the buttonSelector is not provided
     }
 
-    let button
-    if (buttonSelector.startsWith('//')) {
-        // XPath selector
-        const [firstButton] = await page.$x(buttonSelector)
-        button = firstButton
-    } else {
-        // CSS selector
-        button = await page.$(buttonSelector)
-    }
+    try {
+        await safePageOperation(async () => {
+            let button
+            if (buttonSelector.startsWith('//')) {
+                // XPath selector
+                const buttons = await page.$x(buttonSelector)
+                button = buttons[0]
+            } else {
+                // CSS selector
+                button = await page.$(buttonSelector)
+            }
 
-    if (button) {
-        await button.click()
+            if (button) {
+                await button.click()
+                return true
+            }
+            return false
+        })
         return true
+    } catch (error) {
+        console.error(`Error clicking paraphrase button: ${error.message}`)
+        return false
     }
-    return false
 }
 
 // Function to check if the form is submitted
 async function waitForFormSubmission(page, buttonSelector) {
     try {
-        // Wait for paraphrasing to complete - button to become enabled
-        // await page.waitForSelector(`${buttonSelector}:not([disabled])`);
+        // Wait for paraphrasing to complete
+        // Try multiple approaches to detect when paraphrasing is done
+        
+        // Approach 1: Wait for loading indicator to appear and disappear
+        try {
+            await safePageOperation(async () => {
+                await page.waitForSelector(`${buttonSelector} div:nth-child(2)`, {
+                    visible: true,
+                    timeout: 5000,
+                })
+            })
+            
+            await safePageOperation(async () => {
+                await page.waitForSelector(`${buttonSelector} div:nth-child(2)`, {
+                    hidden: true,
+                    timeout: 30000,
+                })
+            })
+            return true
+        } catch (error) {
+            // If that doesn't work, try waiting for output to appear
+            console.log('Waiting for output to appear instead...')
+        }
 
-        // await second div in buttonSelector to be removed from dom
-        // await page.waitForSelector(`${buttonSelector} div:nth-child(2)`, { hidden: true });
-
-        // Implement the logic to check if the form is submitted
-        // const isDisabled = await page.$eval(buttonSelector, (button) => button.disabled);
-        // return isDisabled;
-
-        // Wait for the new div to appear within the button, indicating the process has started
-        await page.waitForSelector(`${buttonSelector} div:nth-child(2)`, {
-            visible: true,
-        })
-
-        // Then, wait for the new div to disappear, indicating the process has finished
-        await page.waitForSelector(`${buttonSelector} div:nth-child(2)`, {
-            hidden: true,
-        })
-
-        return true
+        // Approach 2: Wait for output content to appear
+        try {
+            await safePageOperation(async () => {
+                await page.waitForSelector('#paraphraser-output-box', {
+                    visible: true,
+                    timeout: 30000,
+                })
+            })
+            
+            // Additional wait to ensure content is loaded
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            return true
+        } catch (error) {
+            console.error('Error: Process did not complete in the expected time.')
+            return false
+        }
     } catch (error) {
-        console.error('Error: Process did not complete in the expected time.')
+        console.error(`Error waiting for form submission: ${error.message}`)
         return false
     }
 }
@@ -235,19 +467,24 @@ async function submitForm(page, buttonSelector) {
 // Function to get the output content
 async function getOutputContent(page, outputSelector) {
     try {
-        const content = await page.evaluate((selector) => {
-            const element = document.querySelector(selector)
-            return element ? element.textContent : null
-        }, outputSelector)
+        const content = await safePageOperation(async () => {
+            return await page.evaluate((selector) => {
+                const element = document.querySelector(selector)
+                if (element) {
+                    return element.textContent || element.innerText || ''
+                }
+                return null
+            }, outputSelector)
+        })
 
-        if (content === null) {
+        if (content === null || content.trim() === '') {
             console.log('Output element not found or no content.')
             return null
         }
 
-        return content
+        return content.trim()
     } catch (error) {
-        console.error('Error retrieving output content:', error)
+        console.error(`Error retrieving output content: ${error.message}`)
         return null
     }
 }
@@ -257,100 +494,121 @@ async function selectLanguage(page, languageName) {
     const menuButtonXPath = "//button[contains(., 'All')]"
 
     try {
-        // Wait for the button to be visible and click it
-        const [menuButton] = await page.$x(menuButtonXPath)
-        if (menuButton) {
-            await menuButton.click()
-        } else {
-            throw new Error('Language menu button not found')
-        }
+        await safePageOperation(async () => {
+            // Check if page.$x is available (might not be if page is in bad state)
+            if (typeof page.$x !== 'function') {
+                throw new Error('Page.$x is not available - page may be in invalid state')
+            }
+            // Wait for the button to be visible and click it
+            const menuButtons = await page.$x(menuButtonXPath)
+            if (menuButtons.length > 0) {
+                await menuButtons[0].click()
+            } else {
+                throw new Error('Language menu button not found')
+            }
+        })
 
         // Wait a moment for animation if needed
-        await page.waitForTimeout(500) // Adjust timing as necessary
+        await new Promise(resolve => setTimeout(resolve, 500))
 
-        // XPath to find a language option by its text content
-        const languageOptionXPath = `//li//p[contains(text(), "${languageName}")]`
+        await safePageOperation(async () => {
+            // XPath to find a language option by its text content
+            const languageOptionXPath = `//li//p[contains(text(), "${languageName}")]`
 
-        // Wait for the language option to be visible and click it
-        const [languageOption] = await page.$x(languageOptionXPath)
-        if (languageOption) {
-            await languageOption.click()
-            console.log(`Language set to "${languageName}".`)
-        } else {
-            throw new Error(`Language option "${languageName}" not found.`)
-        }
+            // Wait for the language option to be visible and click it
+            if (typeof page.$x !== 'function') {
+                throw new Error('Page.$x is not available - page may be in invalid state')
+            }
+            const languageOptions = await page.$x(languageOptionXPath)
+            if (languageOptions.length > 0) {
+                await languageOptions[0].click()
+                console.log(`Language set to "${languageName}".`)
+            } else {
+                throw new Error(`Language option "${languageName}" not found.`)
+            }
+        })
     } catch (error) {
-        console.error(`Error selecting language "${languageName}": ${error}`)
+        console.error(`Error selecting language "${languageName}": ${error.message}`)
+        // Don't throw - language selection is optional
     }
 }
 async function selectMode(page, modeName) {
     const modeDropdownSelector = '#demo-simple-select'
-    const modeOptionXPath = `//li[contains(@class, 'MuiMenuItem-root')]//span[contains(@class, 'MuiTypography-body1') and contains(text(), "${modeName}")]`
 
     try {
-        await page.waitForSelector(modeDropdownSelector, { visible: true })
-        await page.click(modeDropdownSelector)
+        await safePageOperation(async () => {
+            // Check if page methods are available
+            if (typeof page.waitForSelector !== 'function') {
+                throw new Error('Page methods not available - page may be in invalid state')
+            }
+            await page.waitForSelector(modeDropdownSelector, { visible: true, timeout: 10000 })
+            await page.click(modeDropdownSelector)
+        })
 
         // Additional wait to ensure dropdown animation completes and options are fully rendered
-        await page.waitForTimeout(1000) // Adjust the timeout based on actual behavior
+        await new Promise(resolve => setTimeout(resolve, 1000))
 
         // Since direct XPath approach failed, let's try clicking based on the text content more explicitly
         // Adjusting the approach to use evaluation for more control
-        await page.evaluate((modeName) => {
-            const options = Array.from(
-                document.querySelectorAll('li[role="option"]')
-            )
-            const targetOption = options.find((option) =>
-                option.textContent.includes(modeName)
-            )
-            if (targetOption) {
-                targetOption.click()
-            }
-        }, modeName)
+        await safePageOperation(async () => {
+            await page.evaluate((modeName) => {
+                const options = Array.from(
+                    document.querySelectorAll('li[role="option"]')
+                )
+                const targetOption = options.find((option) =>
+                    option.textContent.includes(modeName)
+                )
+                if (targetOption) {
+                    targetOption.click()
+                }
+            }, modeName)
+        })
 
         console.log(`Mode set to "${modeName}".`)
     } catch (error) {
-        console.log(`Error while selecting mode "${modeName}": ${error}`)
-        // Add fallback or additional error handling as necessary
+        console.log(`Error while selecting mode "${modeName}": ${error.message}`)
+        // Don't throw - mode selection is optional
     }
 }
 
 async function selectSynonymsLevel(page, value) {
     // Ensure the value is within the allowed range
-    const sanitizedValue = Math.max(0, Math.min(value, 100)) // Assuming the range is 0 to 100
+    const sanitizedValue = Math.max(0, Math.min(parseInt(value, 10) || 0, 100)) // Assuming the range is 0 to 100
 
-    // JavaScript code to be executed in the page context
-    const jsHandle = await page.evaluateHandle(() => document)
-    const result = await page.evaluate(
-        (document, sanitizedValue) => {
-            // Find the slider by its unique characteristics
-            const slider = document.querySelector(
-                'input[type="range"][data-testid="synonyms-slider"]'
-            )
-            if (slider) {
-                // Set the value of the slider
-                slider.value = sanitizedValue
+    try {
+        const result = await safePageOperation(async () => {
+            // JavaScript code to be executed in the page context
+            return await page.evaluate((sanitizedValue) => {
+                // Find the slider by its unique characteristics
+                const slider = document.querySelector(
+                    'input[type="range"][data-testid="synonyms-slider"]'
+                )
+                if (slider) {
+                    // Set the value of the slider
+                    slider.value = sanitizedValue
 
-                // Dispatch events to notify the page of the change
-                const events = ['change', 'input'] // Add any other events the slider might listen to
-                events.forEach((event) => {
-                    slider.dispatchEvent(new Event(event, { bubbles: true }))
-                })
+                    // Dispatch events to notify the page of the change
+                    const events = ['change', 'input'] // Add any other events the slider might listen to
+                    events.forEach((event) => {
+                        slider.dispatchEvent(new Event(event, { bubbles: true }))
+                    })
 
-                return 'Success'
-            } else {
-                return 'Slider not found'
-            }
-        },
-        jsHandle,
-        sanitizedValue
-    )
+                    return 'Success'
+                } else {
+                    return 'Slider not found'
+                }
+            }, sanitizedValue)
+        })
 
-    console.log(result) // Logs 'Success' if the slider was found and adjusted, otherwise 'Slider not found'
+        console.log(result) // Logs 'Success' if the slider was found and adjusted, otherwise 'Slider not found'
+    } catch (error) {
+        console.error(`Error setting synonyms level: ${error.message}`)
+    }
 }
 
 async function quillbot(text, options = {}) {
     let browser // Declare browser outside of try-catch so it's accessible in finally
+    let page
     try {
         const outputSelector = '#paraphraser-output-box'
 
@@ -372,37 +630,197 @@ async function quillbot(text, options = {}) {
             parts.push(str)
         }
 
+        // Determine if we're in dev mode (headless is false or 'new')
+        const isDev = options.headless === false || options.headless === 'new'
+        
         if (typeof options.headless !== 'boolean') options.headless = 'new' // Set headless if not specified
         browser = await puppeteer.launch({
-            headless: options.headless,
+            headless: options.headless === 'new' ? false : options.headless,
         })
 
-        const page = await browser.newPage()
-        await page.goto('https://quillbot.com/', { waitUntil: 'networkidle0' })
+        page = await browser.newPage()
+        
+        // Suppress console errors from Puppeteer about detached frames
+        page.on('console', (msg) => {
+            const type = msg.type()
+            const text = msg.text()
+            // Only log non-detached frame errors
+            if (type === 'error' && !text.includes('detached') && !text.includes('Navigating frame')) {
+                console.log(`Browser console ${type}: ${text}`)
+            }
+        })
+        
+        // Suppress page error events that are just frame detachment warnings
+        page.on('pageerror', (error) => {
+            // Only log if it's not a detached frame error
+            if (!error.message.includes('detached') && !error.message.includes('Navigating frame')) {
+                console.error(`Page error: ${error.message}`)
+            }
+        })
+        
+        // Set a reasonable viewport
+        await page.setViewport({ width: 1920, height: 1080 })
+        
+        console.log('Navigating to QuillBot Paraphrasing Tool...')
+        // Navigate to QuillBot paraphrasing tool with proper wait conditions
+        // Wrap in try-catch to handle frame detachment errors during navigation
+        try {
+            await page.goto('https://quillbot.com/paraphrasing-tool', { 
+                waitUntil: 'domcontentloaded', // Use domcontentloaded instead of networkidle2 for more reliability
+                timeout: 60000 
+            })
+        } catch (error) {
+            // Ignore frame detachment errors during navigation - they're common with dynamic sites
+            if (error.message.includes('detached') || error.message.includes('Navigating frame')) {
+                console.log('Frame detachment during navigation (normal for dynamic sites), continuing...')
+                // Wait a bit longer to ensure page is loaded despite the error
+                await new Promise(resolve => setTimeout(resolve, 5000))
+            } else {
+                // Re-throw other errors
+                throw error
+            }
+        }
+        
+        console.log('Page loaded, waiting for initialization...')
+        // Wait for page to fully initialize after navigation
+        // This gives time for any dynamic content to load
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        
+        // Ensure page is ready by checking if main frame is accessible
+        try {
+            const url = page.url()
+            console.log(`Page URL: ${url}`)
+        } catch (error) {
+            console.error('Page appears to be in an invalid state after navigation')
+            throw new Error('Page navigation failed - page is not accessible')
+        }
+        
+        // Wait for the page to be fully interactive
+        // Try to wait for key elements that should be present on the paraphrasing page
+        console.log('Waiting for page elements to load...')
+        try {
+            // Wait for either the input box or a common container element
+            await page.waitForFunction(() => {
+                // Check multiple possible selectors
+                const selectors = [
+                    '#inputText',
+                    '#paraphraser-input-box',
+                    '[data-testid="input-text-box"]',
+                    '[data-testid="paraphraser-input-box"]',
+                    'textarea[placeholder*="paste" i]',
+                    'div[contenteditable="true"][placeholder*="paste" i]',
+                    'div[placeholder*="paste" i]',
+                    '[aria-label*="paste" i]',
+                ]
+                
+                for (const selector of selectors) {
+                    const element = document.querySelector(selector)
+                    if (element) {
+                        // Check if visible
+                        const style = window.getComputedStyle(element)
+                        if (style.display !== 'none' && style.visibility !== 'hidden' && element.offsetParent !== null) {
+                            return true
+                        }
+                    }
+                }
+                return false
+            }, { timeout: 30000, polling: 500 })
+            console.log('Page elements detected')
+        } catch (error) {
+            console.log(`Page elements not detected within timeout: ${error.message}, continuing anyway...`)
+        }
+        
+        // Additional wait for React/JavaScript to fully initialize
+        // QuillBot uses React which needs time to hydrate and render
+        console.log('Waiting for React to fully initialize...')
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        
+        // Try to wait for any iframe navigations to complete
+        // Some sites use iframes that navigate after page load
+        console.log('Waiting for all frames to stabilize...')
+        await new Promise(resolve => setTimeout(resolve, 3000))
+        
+        // Save initial HTML for debugging
+        await saveHTMLForDebug(page, 'initial-load.html', isDev)
+        console.log('Initial page loaded and saved')
+        
+        // One more check - ensure page is still accessible after all the waiting
+        try {
+            await safePageOperation(async () => {
+                const testUrl = await page.url()
+                console.log(`Page verified accessible: ${testUrl}`)
+            }, 1)
+        } catch (error) {
+            console.error('Page became inaccessible after loading, retrying navigation...')
+            // If page is no longer accessible, we have a problem
+            // For now, continue and hope elements can still be found
+        }
 
-        // Select language before paraphrasing
+        // Select language before paraphrasing - non-blocking, continue if it fails
         if (options.language) {
-            await selectLanguage(page, options.language)
+            console.log(`Attempting to select language: ${options.language}`)
+            try {
+                await selectLanguage(page, options.language)
+                await new Promise(resolve => setTimeout(resolve, 1000))
+            } catch (error) {
+                console.log(`Language selection failed (continuing): ${error.message}`)
+            }
         }
-        // Select mode before paraphrasing
+        // Select mode before paraphrasing - non-blocking
         if (options.mode) {
-            await selectMode(page, options.mode)
+            console.log(`Attempting to select mode: ${options.mode}`)
+            try {
+                await selectMode(page, options.mode)
+                await new Promise(resolve => setTimeout(resolve, 1000))
+            } catch (error) {
+                console.log(`Mode selection failed (continuing): ${error.message}`)
+            }
         }
 
-        // Select synonyms level before paraphrasing
+        // Select synonyms level before paraphrasing - non-blocking
         if (options.synonymsLevel) {
-            await selectSynonymsLevel(page, options.synonymsLevel)
+            console.log(`Attempting to set synonyms level: ${options.synonymsLevel}`)
+            try {
+                await selectSynonymsLevel(page, options.synonymsLevel)
+                await new Promise(resolve => setTimeout(resolve, 1000))
+            } catch (error) {
+                console.log(`Synonyms level setting failed (continuing): ${error.message}`)
+            }
         }
 
-        // Wait for input
-        const inputSelector = await getInputSelector(page)
-        const inputField = await getInputField(page, inputSelector)
-        if (!inputField) {
+        // Wait for input - try multiple times with fresh page references
+        let inputSelector = null
+        let inputField = null
+        let retries = 3
+        
+        for (let retry = 0; retry < retries; retry++) {
+            try {
+                inputSelector = await getInputSelector(page)
+                if (inputSelector) {
+                    inputField = await getInputField(page, inputSelector)
+                    if (inputField) {
+                        break
+                    }
+                }
+            } catch (error) {
+                console.log(`Attempt ${retry + 1} failed to find input: ${error.message}`)
+                if (retry < retries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 2000))
+                    await saveHTMLForDebug(page, `retry-${retry + 1}-input-search.html`, isDev)
+                }
+            }
+        }
+        
+        if (!inputField || !inputSelector) {
             // Handle the case where the input field wasn't found
+            await saveHTMLForDebug(page, 'input-not-found.html', isDev)
             console.log('Input field not found. Exiting script.')
-            return // Exit the function, browser will be closed in finally
+            console.log('Check debug-html/input-not-found.html for page state')
+            // Browser will stay open in finally block if in dev mode
+            return null // Exit the function, browser will be closed in finally
         }
         console.log('Input found')
+        await saveHTMLForDebug(page, 'before-paraphrasing.html', isDev)
 
         // Go through each part and paraphrase it
         for (let i = 0; i < parts.length; i += 1) {
@@ -410,54 +828,113 @@ async function quillbot(text, options = {}) {
 
             const part = parts[i]
 
-            // eslint-disable-next-line no-promise-executor-return
-            await new Promise((resolve) => setTimeout(resolve, 1000))
+            try {
+                // Refresh page references if needed
+                await safePageOperation(async () => {
+                    if (!inputField || !await page.$(inputSelector)) {
+                        console.log('Re-acquiring input field...')
+                        inputField = await getInputField(page, inputSelector)
+                    }
+                })
 
-            // Clear the text area
-            await clearInputField(page, inputSelector, inputField)
+                // Wait before clearing
+                await new Promise((resolve) => setTimeout(resolve, 1000))
 
-            // eslint-disable-next-line no-promise-executor-return
-            await new Promise((resolve) => setTimeout(resolve, 1000))
+                // Clear the text area
+                await clearInputField(page, inputSelector, inputField)
+                await saveHTMLForDebug(page, `part-${i + 1}-cleared.html`, isDev)
 
-            // Input the string in the text area
-            await inputString(page, inputSelector, inputField, part)
+                // Wait after clearing
+                await new Promise((resolve) => setTimeout(resolve, 1000))
 
-            // eslint-disable-next-line no-promise-executor-return
-            await new Promise((resolve) => setTimeout(resolve, 1000))
+                // Input the string in the text area
+                await inputString(page, inputSelector, inputField, part)
+                await saveHTMLForDebug(page, `part-${i + 1}-input.html`, isDev)
 
-            const buttonSelector = await getButtonSelector(page)
+                // Wait after input
+                await new Promise((resolve) => setTimeout(resolve, 1000))
 
-            const isSubmitted = await submitForm(page, buttonSelector)
-            if (!isSubmitted) {
-                // Handle submission failure
-                console.log('Form submission failed. Exiting script.')
-                return
+                const buttonSelector = await getButtonSelector(page)
+                if (!buttonSelector) {
+                    await saveHTMLForDebug(page, `part-${i + 1}-button-not-found.html`, isDev)
+                    console.log('Button selector not found. Exiting script.')
+                    return null
+                }
+
+                const isSubmitted = await submitForm(page, buttonSelector)
+                if (!isSubmitted) {
+                    // Handle submission failure
+                    await saveHTMLForDebug(page, `part-${i + 1}-submission-failed.html`, isDev)
+                    console.log('Form submission failed. Exiting script.')
+                    return null
+                }
+
+                // Wait a bit for output to be ready
+                await new Promise((resolve) => setTimeout(resolve, 2000))
+
+                // Get the paraphrased content
+                const outputContent = await getOutputContent(page, outputSelector)
+                if (outputContent) {
+                    output += outputContent + ' '
+                    await saveHTMLForDebug(page, `part-${i + 1}-completed.html`, isDev)
+                } else {
+                    // Handle the case where no output content is retrieved
+                    await saveHTMLForDebug(page, `part-${i + 1}-no-output.html`, isDev)
+                    console.log('Output content not found. Exiting script.')
+                    return null
+                }
+
+                console.log('Paraphrasing complete', i + 1, 'of', parts.length)
+
+                // Wait before next iteration
+                await new Promise((resolve) => setTimeout(resolve, 1000))
+            } catch (error) {
+                await saveHTMLForDebug(page, `part-${i + 1}-error.html`, isDev)
+                console.error(`Error processing part ${i + 1}: ${error.message}`)
+                throw error
             }
-
-            // Get the paraphrased content
-            const outputContent = await getOutputContent(page, outputSelector)
-            if (outputContent) {
-                output += outputContent
-            } else {
-                // Handle the case where no output content is retrieved
-                console.log('Output content not found. Exiting script.')
-                return
-            }
-
-            console.log('Paraphrasing complete', i + 1, 'of', parts.length)
-
-            // eslint-disable-next-line no-promise-executor-return
-            await new Promise((resolve) => setTimeout(resolve, 1000))
         }
 
         console.log('Paraphrasing complete')
-        return output
+        const result = output.trim()
+        // Store success flag to avoid delaying browser close on success
+        options._success = true
+        return result
     } catch (error) {
-        console.log(`Error: ${error}`)
+        console.error(`Error in quillbot function: ${error.message}`)
+        console.error(error.stack)
+        // Save error state HTML if in dev mode
+        const isDev = options.headless === false || options.headless === 'new'
+        if (page && !page.isClosed?.()) {
+            try {
+                await saveHTMLForDebug(page, 'error-state.html', isDev)
+            } catch (saveError) {
+                console.error(`Could not save error HTML: ${saveError.message}`)
+            }
+        }
+        // Browser will stay open in finally block if in dev mode
         return null
     } finally {
         if (browser) {
-            await browser.close()
+            // Check if we're in dev mode (headless: false or 'new')
+            const isDev = options.headless === false || options.headless === 'new'
+            
+            if (isDev) {
+                // In dev mode, keep browser open longer for debugging
+                console.log('\n=== DEV MODE: Browser will stay open for 60 seconds ===')
+                console.log('You can inspect the page to debug selectors and page structure.')
+                console.log('Close the browser manually or wait for it to close automatically.\n')
+                await new Promise(resolve => setTimeout(resolve, 60000))
+            }
+            
+            try {
+                await browser.close()
+                if (isDev) {
+                    console.log('Browser closed.')
+                }
+            } catch (error) {
+                console.error(`Error closing browser: ${error.message}`)
+            }
         }
     }
 }

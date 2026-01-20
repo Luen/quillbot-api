@@ -1,36 +1,261 @@
 {
   "env": {
-    "node": true
+    "node": true,
+    "es2024": true
   },
-  "extends": "airbnb/base",
+  "extends": [
+    "airbnb-base",
+    "plugin:import/recommended",
+    "plugin:import/errors",
+    "plugin:import/warnings"
+  ],
   "parserOptions": {
+    "ecmaVersion": 2024,
     "sourceType": "script",
-    "ecmaVersion": 2022
+    "ecmaFeatures": {
+      "jsx": false,
+      "modules": false
+    }
   },
+  "plugins": ["import"],
   "globals": {
-    "window": true,
-    "document": true
+    "window": "readonly",
+    "document": "readonly",
+    "navigator": "readonly"
+  },
+  "settings": {
+    "import/resolver": {
+      "node": {
+        "extensions": [".js", ".json"]
+      }
+    }
   },
   "rules": {
-    "max-len": 0,
-    "arrow-parens": 0,
-    "no-console": 0,
-    "no-await-in-loop": 0,
-    "object-curly-newline": 0,
-    'no-restricted-syntax': [
-      'error',
+    // Line length - allow longer lines for modern codebases
+    "max-len": [
+      "warn",
       {
-        selector: 'ForInStatement',
-        message: 'for..in loops iterate over the entire prototype chain, which is virtually never what you want. Use Object.{keys,values,entries}, and iterate over the resulting array.',
-      },
-      {
-        selector: 'LabeledStatement',
-        message: 'Labels are a form of GOTO; using them makes code confusing and hard to maintain and understand.',
-      },
-      {
-        selector: 'WithStatement',
-        message: '`with` is disallowed in strict mode because it makes code impossible to predict and optimize.',
-      },
+        "code": 120,
+        "tabWidth": 4,
+        "ignoreUrls": true,
+        "ignoreStrings": true,
+        "ignoreTemplateLiterals": true,
+        "ignoreRegExpLiterals": true,
+        "ignoreComments": true
+      }
     ],
+
+    // Indentation - 4 spaces for this project
+    "indent": [
+      "error",
+      4,
+      {
+        "SwitchCase": 1,
+        "VariableDeclarator": 1,
+        "outerIIFEBody": 1,
+        "MemberExpression": 1,
+        "FunctionDeclaration": {
+          "parameters": 1,
+          "body": 1
+        },
+        "FunctionExpression": {
+          "parameters": 1,
+          "body": 1
+        },
+        "CallExpression": {
+          "arguments": 1
+        },
+        "ArrayExpression": 1,
+        "ObjectExpression": 1,
+        "ImportDeclaration": 1,
+        "flatTernaryExpressions": false,
+        "ignoreComments": false
+      }
+    ],
+
+    // Arrow functions
+    "arrow-parens": ["error", "always"],
+    "arrow-body-style": ["warn", "as-needed"],
+
+    // Console - allow for Node.js scripts
+    "no-console": "off",
+
+    // Async/Await - allow await in loops when needed
+    "no-await-in-loop": "off",
+    "no-promise-executor-return": "error",
+    "require-atomic-updates": "error",
+
+    // Object formatting
+    "object-curly-newline": [
+      "error",
+      {
+        "ObjectExpression": {
+          "minProperties": 4,
+          "multiline": true,
+          "consistent": true
+        },
+        "ObjectPattern": {
+          "minProperties": 4,
+          "multiline": true,
+          "consistent": true
+        },
+        "ImportDeclaration": {
+          "minProperties": 4,
+          "multiline": true,
+          "consistent": true
+        },
+        "ExportDeclaration": {
+          "minProperties": 4,
+          "multiline": true,
+          "consistent": true
+        }
+      }
+    ],
+    "object-curly-spacing": ["error", "never"],
+    "object-property-newline": ["error", { "allowAllPropertiesOnSameLine": true }],
+
+    // Semicolons - required
+    "semi": ["error", "always"],
+    "semi-style": ["error", "last"],
+
+    // Quotes - single quotes preferred
+    "quotes": ["error", "single", { "avoidEscape": true, "allowTemplateLiterals": true }],
+    "quote-props": ["error", "as-needed"],
+
+    // Spacing
+    "comma-dangle": [
+      "error",
+      {
+        "arrays": "always-multiline",
+        "objects": "always-multiline",
+        "imports": "always-multiline",
+        "exports": "always-multiline",
+        "functions": "never"
+      }
+    ],
+    "comma-spacing": ["error", { "before": false, "after": true }],
+    "comma-style": ["error", "last"],
+    "space-before-blocks": "error",
+    "space-before-function-paren": [
+      "error",
+      {
+        "anonymous": "always",
+        "named": "never",
+        "asyncArrow": "always"
+      }
+    ],
+    "space-in-parens": ["error", "never"],
+    "space-infix-ops": "error",
+    "space-unary-ops": ["error", { "words": true, "nonwords": false }],
+    "keyword-spacing": ["error", { "before": true, "after": true }],
+    "key-spacing": ["error", { "beforeColon": false, "afterColon": true }],
+    "spaced-comment": ["error", "always", { "exceptions": ["-", "+"] }],
+
+    // Function declarations
+    "func-style": ["warn", "declaration", { "allowArrowFunctions": true }],
+    "prefer-arrow-callback": "warn",
+    "arrow-spacing": "error",
+
+    // Variables
+    "no-var": "error",
+    "prefer-const": "error",
+    "prefer-destructuring": [
+      "warn",
+      {
+        "array": false,
+        "object": true
+      }
+    ],
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }
+    ],
+
+    // Best practices
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "ForInStatement",
+        "message": "for..in loops iterate over the entire prototype chain. Use Object.{keys,values,entries} instead."
+      },
+      {
+        "selector": "LabeledStatement",
+        "message": "Labels are a form of GOTO. Avoid using labels."
+      },
+      {
+        "selector": "WithStatement",
+        "message": "`with` is disallowed in strict mode."
+      }
+    ],
+    "no-param-reassign": ["error", { "props": false }],
+    "no-return-assign": "error",
+    "no-return-await": "error",
+    "prefer-promise-reject-errors": "error",
+    "no-throw-literal": "error",
+
+    // Error handling
+    "no-unused-expressions": ["error", { "allowShortCircuit": true, "allowTernary": true }],
+    "no-else-return": ["warn", { "allowElseIf": false }],
+
+    // Modern JavaScript
+    "prefer-template": "warn",
+    "prefer-spread": "warn",
+    "prefer-rest-params": "warn",
+    "no-useless-constructor": "error",
+    "no-useless-return": "error",
+    "no-useless-concat": "error",
+    "no-useless-rename": "error",
+
+    // Import/Export
+    "import/order": [
+      "warn",
+      {
+        "groups": [
+          "builtin",
+          "external",
+          "internal",
+          "parent",
+          "sibling",
+          "index"
+        ],
+        "newlines-between": "always",
+        "alphabetize": {
+          "order": "asc",
+          "caseInsensitive": true
+        }
+      }
+    ],
+    "import/no-unresolved": "error",
+    "import/no-extraneous-dependencies": [
+      "error",
+      {
+        "devDependencies": [
+          "**/*.test.js",
+          "**/*.spec.js",
+          "**/test/**",
+          "**/tests/**",
+          "**/__tests__/**"
+        ]
+      }
+    ],
+    "import/extensions": [
+      "error",
+      "always",
+      {
+        "js": "never",
+        "json": "always"
+      }
+    ],
+    "import/prefer-default-export": "off",
+
+    // Security
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-new-func": "error",
+    "no-script-url": "error"
   }
 }
