@@ -98,15 +98,16 @@ async function getInputSelector(page) {
     const placeholderText =
         'To rewrite text, enter or paste it here and press "Paraphrase."'
     // Try multiple possible selectors for the input field on the paraphrasing tool page
+    // Known working selector first for speed
     const inputSelectors = [
+        '#paraphraser-input-box', // Known working selector - try first
         '#inputText',
-        '#paraphraser-input-box',
-        '[data-testid="input-text-box"]',
         '[data-testid="paraphraser-input-box"]',
-        'textarea[placeholder*="paste" i]',
-        'textarea[placeholder*="Paraphrase" i]',
+        '[data-testid="input-text-box"]',
         'div[contenteditable="true"][placeholder*="paste" i]',
         'div[contenteditable="true"][placeholder*="Paste" i]',
+        'textarea[placeholder*="paste" i]',
+        'textarea[placeholder*="Paraphrase" i]',
         'div[placeholder*="paste" i]',
         `div[placeholder="${placeholderText}"]`,
         '[aria-label*="paste" i]',
@@ -300,37 +301,40 @@ async function inputString(page, inputSelector, inputField, text) {
         let inputContent = await getInputContent(page, inputSelector)
         if (inputContent && inputContent.trim().length >= text.trim().length * 0.9) {
             console.log(`Text content set successfully (${inputContent.trim().length} characters)`)
-        } else {
-            console.warn('Warning: Text content may not have been set correctly, trying paste method...')
-            // Fallback: Try clipboard paste if JavaScript method didn't work
-            try {
-                await safePageOperation(async () => {
-                    await page.evaluate(async (textString) => {
-                        // eslint-disable-next-line no-undef
-                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                            await navigator.clipboard.writeText(textString)
-                        }
-                    }, text)
-                    await page.focus(inputSelector)
-                    await page.keyboard.down('Control')
-                    await page.keyboard.press('KeyV')
-                    await page.keyboard.up('Control')
-                })
-                await new Promise(resolve => setTimeout(resolve, 500))
-                // Click and press space again after pasting
-                await page.click(inputSelector, { clickCount: 1 })
-                await new Promise(resolve => setTimeout(resolve, 200))
-                // Press Ctrl+End to go to the very end of the text
+            // Success - no need to try fallback methods, return early
+            return
+        }
+        
+        // Fallback: Try clipboard paste if JavaScript method didn't work
+        // Only runs if primary method failed
+        console.warn('Warning: Text content may not have been set correctly, trying paste method...')
+        try {
+            await safePageOperation(async () => {
+                await page.evaluate(async (textString) => {
+                    // eslint-disable-next-line no-undef
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(textString)
+                    }
+                }, text)
+                await page.focus(inputSelector)
                 await page.keyboard.down('Control')
-                await page.keyboard.press('End')
+                await page.keyboard.press('KeyV')
                 await page.keyboard.up('Control')
-                await new Promise(resolve => setTimeout(resolve, 200))
-                // Press space bar to dismiss any overlays
-                await page.keyboard.press('Space')
-                await new Promise(resolve => setTimeout(resolve, 200))
-            } catch (error) {
-                console.log(`Paste fallback failed: ${error.message}`)
-            }
+            })
+            await new Promise(resolve => setTimeout(resolve, 500))
+            // Click and press space again after pasting
+            await page.click(inputSelector, { clickCount: 1 })
+            await new Promise(resolve => setTimeout(resolve, 200))
+            // Press Ctrl+End to go to the very end of the text
+            await page.keyboard.down('Control')
+            await page.keyboard.press('End')
+            await page.keyboard.up('Control')
+            await new Promise(resolve => setTimeout(resolve, 200))
+            // Press space bar to dismiss any overlays
+            await page.keyboard.press('Space')
+            await new Promise(resolve => setTimeout(resolve, 200))
+        } catch (error) {
+            console.log(`Paste fallback failed: ${error.message}`)
         }
     } catch (error) {
         console.error(`Error inputting string: ${error.message}`)
@@ -413,9 +417,27 @@ async function clickParaphraseButton(page, buttonSelector) {
 async function waitForFormSubmission(page, buttonSelector) {
     try {
         // Wait for paraphrasing to complete
-        // Try multiple approaches to detect when paraphrasing is done
+        // Use the most reliable method first: wait for output content to appear
+        // This is the fastest and most reliable method
         
-        // Approach 1: Wait for loading indicator to appear and disappear
+        try {
+            // Approach 1: Wait for output content to appear (most reliable)
+            await safePageOperation(async () => {
+                await page.waitForSelector('#paraphraser-output-box', {
+                    visible: true,
+                    timeout: 30000,
+                })
+            })
+            
+            // Additional wait to ensure content is loaded
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            return true
+        } catch (error) {
+            // If that doesn't work, try waiting for button loading indicator
+            console.log('Output not detected, waiting for button state change...')
+        }
+
+        // Approach 2: Wait for loading indicator to appear and disappear (fallback)
         try {
             await safePageOperation(async () => {
                 await page.waitForSelector(`${buttonSelector} div:nth-child(2)`, {
@@ -430,23 +452,6 @@ async function waitForFormSubmission(page, buttonSelector) {
                     timeout: 30000,
                 })
             })
-            return true
-        } catch (error) {
-            // If that doesn't work, try waiting for output to appear
-            console.log('Waiting for output to appear instead...')
-        }
-
-        // Approach 2: Wait for output content to appear
-        try {
-            await safePageOperation(async () => {
-                await page.waitForSelector('#paraphraser-output-box', {
-                    visible: true,
-                    timeout: 30000,
-                })
-            })
-            
-            // Additional wait to ensure content is loaded
-            await new Promise(resolve => setTimeout(resolve, 2000))
             return true
         } catch (error) {
             console.error('Error: Process did not complete in the expected time.')
@@ -730,14 +735,14 @@ async function quillbot(text, options = {}) {
         try {
             // Wait for either the input box or a common container element
             await page.waitForFunction(() => {
-                // Check multiple possible selectors
+                // Check multiple possible selectors - known working selector first
                 const selectors = [
+                    '#paraphraser-input-box', // Known working selector - try first
                     '#inputText',
-                    '#paraphraser-input-box',
-                    '[data-testid="input-text-box"]',
                     '[data-testid="paraphraser-input-box"]',
-                    'textarea[placeholder*="paste" i]',
+                    '[data-testid="input-text-box"]',
                     'div[contenteditable="true"][placeholder*="paste" i]',
+                    'textarea[placeholder*="paste" i]',
                     'div[placeholder*="paste" i]',
                     '[aria-label*="paste" i]',
                 ]
