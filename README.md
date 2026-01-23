@@ -140,15 +140,6 @@ const {paraphraser, translator} = require('./index');
 })();
 ```
 
-### Backward Compatibility
-
-The `quillbot` function is still available as an alias for `paraphraser`:
-
-```javascript
-const {quillbot} = require('./index');
-const paraphrased = await quillbot(text);
-```
-
 ## Disclaimer
 
 This script is primarily for educational and experimental purposes. Please keep in mind the ethical implications and QuillBot's terms of service when using this script for paraphrasing or translating content.
